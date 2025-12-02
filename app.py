@@ -3,6 +3,7 @@
 
 import streamlit as st
 from generate_script import generate_script
+from langchain_community.chat_models import ChatTongyi
 import os
 
 # =================== 从环境变量读取后端密钥 ===================
