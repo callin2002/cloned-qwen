@@ -3,6 +3,7 @@ import os
 from langchain_core.prompts import PromptTemplate
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.utilities import SerpAPIWrapper  # 使用 SerpApi 进行网络搜索
+from langchain_community.chat_models import ChatTongyi
 
 
 def generate_script(subject, video_length, creativity, api_key, serpapi_api_key):
