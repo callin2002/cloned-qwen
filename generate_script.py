@@ -9,17 +9,19 @@ from langchain_community.chat_models import ChatTongyi
 def generate_script(subject, video_length, creativity, api_key, serpapi_api_key):
     """
     使用阿里云通义千问生成短视频脚本，并结合百度搜索补充背景知识
-    :param subject: 视频主题
-    :param video_length: 视频时长（分钟）
-    :param creativity: 创意度（temperature，0~1）
-    :param api_key: 阿里云 DashScope API Key (qwen)
-    :param serpapi_api_key: SerpApi 官网获取的 API Key
-    :return: (搜索结果摘要, 标题, 脚本)
     """
     print("🚀 开始生成脚本...")
     print(f"🔍 主题: {subject}, 时长: {video_length}分钟, 创意度: {creativity}")
 
-    # 设置 API Key
+    # 【重要】确保 Key 不为空，如果为空直接报错，方便调试
+    if not api_key:
+        print("❌ 错误：未接收到阿里云 API Key")
+        return None, None, None
+    if not serpapi_api_key:
+        print("❌ 错误：未接收到 SerpApi Key")
+        return None, None, None
+
+    # 设置环境变量（为了 SerpApi 和 DashScope 的底层调用）
     os.environ["DASHSCOPE_API_KEY"] = api_key
     os.environ["SERPAPI_API_KEY"] = serpapi_api_key
 
@@ -60,11 +62,16 @@ def generate_script(subject, video_length, creativity, api_key, serpapi_api_key)
     )
 
     # 3. 初始化通义千问模型
-    model = ChatTongyi(
-        model_name="qwen-max",
-        temperature=creativity,
-        dashscope_api_key=api_key
-    )
+    # 【修改点】注意这里的参数变化，最新版通常使用 model
+    try:
+        model = ChatTongyi(
+            model="qwen-max",  # 将 model_name 改为 model
+            temperature=creativity,
+            api_key=api_key  # 显式传入 api_key
+        )
+    except Exception as e:
+        print(f"❌ 模型初始化失败: {e}")
+        return None, None, None
 
     # 构建链
     title_chain = title_template | model
@@ -74,10 +81,16 @@ def generate_script(subject, video_length, creativity, api_key, serpapi_api_key)
     print("📝 正在生成标题...")
     try:
         title_response = title_chain.invoke({"subject": subject})
-        title = title_response.content.strip()
+        # 兼容不同版本的返回结构（有时候返回是 string，有时候是 message 对象）
+        if hasattr(title_response, 'content'):
+            title = title_response.content.strip()
+        else:
+            title = str(title_response).strip()
+
         print(f"✅ 标题生成完成：{title}")
     except Exception as e:
-        print(f"❌ 标题生成失败：{e}")
+        print(f"❌ 标题生成失败详细报错：{e}")
+        # 这里不要直接 return，方便我们看是不是只有标题挂了
         return None, None, None
 
     # 5. 使用 SerpApi 进行百度搜索（中文）
@@ -85,13 +98,12 @@ def generate_script(subject, video_length, creativity, api_key, serpapi_api_key)
     try:
         search = SerpAPIWrapper(
             serpapi_api_key=serpapi_api_key,
-            engine="baidu",           # 使用百度引擎，更适合中文
-            num=3                       # 返回3个结果
+            params={"engine": "baidu"}  # 某些版本需要这样传 engine
         )
         search_results = search.run(subject)
-        print(f"📄 搜索结果摘要：\n{search_results[:500]}...")
+        print(f"📄 搜索成功")
     except Exception as e:
-        print(f"⚠️ 网络搜索失败：{e}")
+        print(f"⚠️ 网络搜索失败（非阻断性错误）：{e}")
         search_results = "未找到相关网络资料。"
 
     # 6. 生成脚本
@@ -102,10 +114,14 @@ def generate_script(subject, video_length, creativity, api_key, serpapi_api_key)
             "duration": video_length,
             "search_result": search_results
         })
-        script = script_response.content.strip()
+
+        if hasattr(script_response, 'content'):
+            script = script_response.content.strip()
+        else:
+            script = str(script_response).strip()
+
         print("🎬 脚本生成完成！")
         return search_results, title, script
     except Exception as e:
         print(f"❌ 脚本生成失败：{e}")
         return search_results, title, None
-
