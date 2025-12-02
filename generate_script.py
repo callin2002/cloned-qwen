@@ -1,6 +1,6 @@
 import os
+import streamlit as st  # 引入 streamlit 以便直接在网页上打印调试信息
 # 适配新版 LangChain 的引用方式
-from langchain_core.prompts import PromptTemplate
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.utilities import SerpAPIWrapper
 from langchain_community.chat_models import ChatTongyi
@@ -8,20 +8,21 @@ from langchain_community.chat_models import ChatTongyi
 
 def generate_script(subject, video_length, creativity, api_key, serpapi_api_key):
     """
-    生成脚本的核心函数（调试模式版）
-    去掉了所有 try...except，让错误直接暴露给主程序捕获
+    超级调试版：直接将运行进度打印到 Streamlit 网页上
     """
+    st.info("🔍 DEBUG: 已进入 generate_script 函数内部")
 
     # 1. 基础检查
     if not api_key:
+        st.error("❌ DEBUG: api_key 为空！")
         raise ValueError("严重错误：generate_script 未接收到 api_key")
-    if not serpapi_api_key:
-        # SerpApi 如果没有，只打印警告，不阻断（这是唯一可以容忍的错误）
-        print("⚠️ 警告：未接收到 SerpApi Key，搜索功能将失效")
+    else:
+        st.write(f"✅ DEBUG: 接收到 API Key，长度: {len(str(api_key))}")
 
-    # 设置环境变量（某些底层库仍依赖这个）
+    # 设置环境变量
     os.environ["DASHSCOPE_API_KEY"] = api_key
-    os.environ["SERPAPI_API_KEY"] = serpapi_api_key
+    if serpapi_api_key:
+        os.environ["SERPAPI_API_KEY"] = serpapi_api_key
 
     # 2. 定义 Prompt 模板
     title_template = ChatPromptTemplate.from_messages([
@@ -38,53 +39,71 @@ def generate_script(subject, video_length, creativity, api_key, serpapi_api_key)
         要求：开头3秒抓人眼球，语言口语化，适合快节奏剪辑。""")
     ])
 
-    # 3. 初始化模型 (这是最容易报错的地方)
-    # 使用 'model' 参数，而非 'model_name' (新版规范)
-    # 如果 qwen-max 报错，请尝试改成 qwen-turbo
-    model = ChatTongyi(
-        model="qwen-max",
-        temperature=creativity,
-        api_key=api_key
-    )
+    # 3. 初始化模型
+    st.write("🤖 DEBUG: 正在初始化 ChatTongyi 模型...")
+    try:
+        # 尝试使用 qwen-turbo，因为 qwen-max 有时候需要额外权限或更贵
+        model = ChatTongyi(
+            model="qwen-turbo",
+            temperature=creativity,
+            api_key=api_key
+        )
+        st.write("✅ DEBUG: 模型初始化成功")
+    except Exception as e:
+        st.error(f"❌ DEBUG: 模型初始化失败: {e}")
+        raise e
 
-    # 4. 生成标题 (如果不加 try，这里出错会直接抛出，app.py 会显示具体原因)
-    print(f"📝 正在调用模型生成标题... (Key长度: {len(api_key)})")
+    # 4. 生成标题
+    st.write("📝 DEBUG: 正在调用模型生成标题...")
     title_chain = title_template | model
-    title_response = title_chain.invoke({"subject": subject})
 
-    # 兼容性处理：有些版本返回对象，有些返回字符串
-    if hasattr(title_response, 'content'):
-        title = title_response.content.strip()
-    else:
-        title = str(title_response).strip()
+    try:
+        title_response = title_chain.invoke({"subject": subject})
+        # 兼容性处理
+        if hasattr(title_response, 'content'):
+            title = title_response.content.strip()
+        else:
+            title = str(title_response).strip()
+        st.write(f"✅ DEBUG: 标题生成成功: {title}")
+    except Exception as e:
+        st.error(f"❌ DEBUG: 标题生成崩溃: {e}")
+        raise e
 
-    # 5. 网络搜索 (允许失败)
+    # 5. 网络搜索
     search_results = "（因搜索失败，仅使用模型内置知识）"
     if serpapi_api_key:
+        st.write("🌐 DEBUG: 正在尝试网络搜索...")
         try:
-            print("🌐 正在尝试搜索...")
             search = SerpAPIWrapper(serpapi_api_key=serpapi_api_key, params={"engine": "baidu"})
-            # 尝试搜索，如果失败则捕获
             res = search.run(subject)
             if res:
                 search_results = res
+                st.write("✅ DEBUG: 搜索成功")
+            else:
+                st.write("⚠️ DEBUG: 搜索返回为空")
         except Exception as e:
-            print(f"⚠️ 搜索步骤出错 (忽略): {e}")
-            # 搜索失败不应该导致整个脚本生成失败
-            search_results = f"搜索暂不可用: {str(e)}"
+            st.warning(f"⚠️ DEBUG: 搜索出错 (已忽略): {e}")
 
     # 6. 生成脚本
-    print("✍️ 正在生成正文...")
+    st.write("✍️ DEBUG: 正在生成最终脚本...")
     script_chain = script_template | model
-    script_response = script_chain.invoke({
-        "title": title,
-        "duration": video_length,
-        "search_result": search_results
-    })
 
-    if hasattr(script_response, 'content'):
-        script = script_response.content.strip()
-    else:
-        script = str(script_response).strip()
+    try:
+        script_response = script_chain.invoke({
+            "title": title,
+            "duration": video_length,
+            "search_result": search_results
+        })
 
+        if hasattr(script_response, 'content'):
+            script = script_response.content.strip()
+        else:
+            script = str(script_response).strip()
+
+        st.write("✅ DEBUG: 脚本生成完成！准备返回数据。")
+    except Exception as e:
+        st.error(f"❌ DEBUG: 脚本生成崩溃: {e}")
+        raise e
+
+    # 这里的 return 绝对不可能返回 None，除非前面报错被 raise 了
     return search_results, title, script
