@@ -1,6 +1,7 @@
 import os
-from langchain.prompts import ChatPromptTemplate
-from langchain_community.chat_models import ChatTongyi
+# 改为从 core 引入
+from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.utilities import SerpAPIWrapper  # 使用 SerpApi 进行网络搜索
 
 
